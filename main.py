@@ -17,8 +17,10 @@ try:
 except FileNotFoundError:
     user_test_history = {}
 
+from dotenv import load_dotenv
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
+print(f"TOKEN is: {TOKEN}")
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -81,7 +83,7 @@ async def send_next_question(user):
 
     func, (poetic, plain) = questions[index]
     view = View()
-
+ # ✅ 分數按鈕
     for score in range(1, 6):
         async def make_callback(score=score):
             async def callback(interaction: Interaction):
@@ -102,17 +104,37 @@ async def send_next_question(user):
         btn = Button(label=str(score), style=ButtonStyle.primary)
         btn.callback = await make_callback()
         view.add_item(btn)
- # ✅ 加入「查看簡潔版」按鈕
+ # ✅ 切換描述按鈕：建立兩個函式切換 view 文字
+
     async def show_plain(interaction: Interaction):
         await interaction.response.edit_message(
             content=f"**（簡潔版）第 {index + 1} / {len(questions)} 題：** {plain}",
+            view=view_plain
+        )
+
+    async def show_poetic(interaction: Interaction):
+        await interaction.response.edit_message(
+            content=f"**第 {index + 1} 題：** {poetic}",
             view=view
         )
 
+    # 原始 view 加上「查看簡潔版」按鈕
     plain_btn = Button(label="查看簡潔版", style=ButtonStyle.secondary)
     plain_btn.callback = show_plain
     view.add_item(plain_btn)
 
+    # 簡潔版 view 加上「切回詩意版」按鈕
+    view_plain = View()
+    for score in range(1, 6):
+        btn = Button(label=str(score), style=ButtonStyle.primary)
+        btn.callback = await make_callback(score)
+        view_plain.add_item(btn)
+
+    poetic_btn = Button(label="切回詩意版", style=ButtonStyle.secondary)
+    poetic_btn.callback = show_poetic
+    view_plain.add_item(poetic_btn)
+
+    # 發送第一題（詩意版）
     await user.send(f"**第 {index + 1} 題**：{poetic}", view=view)
 
 def calculate_mbti_by_axis(scores):
@@ -144,6 +166,17 @@ async def finalize_test(user):
     member = guild.get_member(user.id)
     await assign_mbti_role(member, guild, mbti_type)
     await send_result_embed(user, mbti_type, dominant_func)
+
+    # 顯示八功能排序結果
+    sorted_funcs = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    ranking_text = "\n".join([f"{i+1}. {func}" for i, (func, _) in enumerate(sorted_funcs)])
+
+    await user.send(
+        "**🧩 你的八功能排序結果如下（不含分數）**\n"
+    f"{ranking_text}\n\n"
+    "（本排序代表你在本次測驗中傾向使用的認知方式，僅供參考。）"
+    )    
+
     await send_mbti_stats(user, guild)
 
 async def assign_mbti_role(member, guild, mbti_type):
