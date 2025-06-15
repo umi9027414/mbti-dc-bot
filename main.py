@@ -28,7 +28,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 user_sessions = {}
 
-@bot.command()
+@bot.command(name="start_test", aliases=["mbti", "測驗"])
 async def start_test(ctx):
     user = ctx.author
     if not isinstance(ctx.channel, discord.DMChannel):
@@ -116,14 +116,60 @@ async def send_next_question(user):
     await user.send(f"📖 第 {index + 1} 題：{poetic}", view=view)
 
 def calculate_mbti_by_axis(scores):
+    # 相對排序：將功能依得分排序
     sorted_funcs = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-    top_funcs = [f for f, _ in sorted_funcs[:4]]
-    is_extroverted_dominant = top_funcs[0] in ["Fe", "Te", "Ne", "Se"]
-    perceiving_axis = "N" if scores["Ne"] + scores["Ni"] > scores["Se"] + scores["Si"] else "S"
-    judging_axis = "T" if scores["Te"] + scores["Ti"] > scores["Fe"] + scores["Fi"] else "F"
-    jp = "J" if (top_funcs[0] if is_extroverted_dominant else top_funcs[1]) in ["Fe", "Te"] else "P"
-    ei = "E" if is_extroverted_dominant else "I"
-    return ei + perceiving_axis + judging_axis + jp, top_funcs
+    top_funcs_raw = [f for f, _ in sorted_funcs]
+
+    # 定義功能對立組合（互斥）
+    opposing_pairs = [("Ne", "Se"), ("Ni", "Si"), ("Te", "Fe"), ("Ti", "Fi")]
+
+    # 移除 top 4 中出現的對立功能（保留得分高的）
+    top_funcs = []
+    seen_opposites = set()
+    for func in top_funcs_raw:
+        for a, b in opposing_pairs:
+            if func == a and b in top_funcs:
+                break
+            if func == b and a in top_funcs:
+                break
+        else:
+            top_funcs.append(func)
+        if len(top_funcs) == 4:
+            break
+
+    # 根據功能組合穩定度，從 top 4 推測 MBTI 類型
+    # 建立代表性組合與對應 MBTI 類型
+    mbti_by_stack = {
+        ("Ni", "Te"): "INTJ",
+        ("Te", "Ni"): "ENTJ",
+        ("Ne", "Ti"): "ENTP",
+        ("Ti", "Ne"): "INTP",
+        ("Si", "Fe"): "ISFJ",
+        ("Fe", "Si"): "ESFJ",
+        ("Fi", "Se"): "ISFP",
+        ("Se", "Fi"): "ESFP",
+        ("Fi", "Ni"): "INFP",
+        ("Ni", "Fi"): "INFJ",
+        ("Fe", "Ne"): "ENFJ",
+        ("Ne", "Fe"): "ENFP",
+        ("Ti", "Si"): "ISTP",
+        ("Si", "Ti"): "ISTJ",
+        ("Te", "Se"): "ESTJ",
+        ("Se", "Te"): "ESTP"
+    }
+
+    # 嘗試從 top 2 或 top 3 中推導
+    mbti_type = "XXXX"
+    for length in [2, 3]:
+        for i in range(len(top_funcs) - length + 1):
+            key = tuple(top_funcs[i:i+2])
+            if key in mbti_by_stack:
+                mbti_type = mbti_by_stack[key]
+                break
+        if mbti_type != "XXXX":
+            break
+
+    return mbti_type, top_funcs
 
 async def finalize_test(user):
     session = user_sessions[user.id]
